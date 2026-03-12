@@ -1,29 +1,36 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Use explicit onClicked handler so it works across all Chromium forks.
-// If chrome.sidePanel is available, try to open the panel; otherwise fall back
-// to a floating popup window (Firefox, older Chromium builds, Arc, etc.).
-chrome.action.onClicked.addListener((tab) => {
-  if (chrome.sidePanel) {
-    chrome.sidePanel
-      .open({ tabId: tab.id! })
-      .catch(() => {
-        // sidePanel.open() not supported in this build — fall back to popup
-        chrome.windows.create({
-          url: chrome.runtime.getURL('index.html'),
-          type: 'popup',
-          width: 420,
-          height: 700,
-        });
-      });
-  } else {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('index.html'),
-      type: 'popup',
-      width: 420,
-      height: 700,
+// On Chrome 116+, configure the side panel to open automatically when the
+// user clicks the extension icon. This replaces the need for an onClicked
+// handler for the primary UI and removes the conflict with default_popup.
+if (chrome.sidePanel?.setPanelBehavior) {
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((err: Error) => {
+      // setPanelBehavior not supported — fall back to onClicked handler below
+      console.warn('[background] sidePanel.setPanelBehavior not supported, using onClicked fallback:', err.message);
     });
+}
+
+// Fallback for browsers/versions that don't support sidePanel.setPanelBehavior
+// (e.g. Firefox, older Chromium builds). The onClicked event only fires when
+// no default_popup is set in the manifest.
+chrome.action.onClicked.addListener((tab) => {
+  // Store the active tab info so the popup window can snap it reliably
+  if (tab?.url && tab?.title) {
+    chrome.storage.local
+      .set({ _lastClickedTab: { url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl } })
+      .catch((err: Error) => {
+        console.warn('[background] Failed to store tab info for snap fallback:', err.message);
+      });
   }
+  // Open a floating popup window as the fallback UI
+  chrome.windows.create({
+    url: chrome.runtime.getURL('index.html'),
+    type: 'popup',
+    width: 420,
+    height: 700,
+  });
 });
 
 chrome.runtime.onMessage.addListener(
@@ -39,12 +46,24 @@ chrome.runtime.onMessage.addListener(
       return true; // keep channel open for async response
     }
     if (message.type === 'SNAP_CURRENT_PAGE') {
-      // Background does the tab query so it works reliably from any extension context
+      // Service workers have no "current window", so use lastFocusedWindow to
+      // find the active tab in the most recently focused browser window.
       chrome.tabs
-        .query({ active: true, currentWindow: true })
-        .then(([tab]) => {
-          if (!tab?.url || !tab?.title) throw new Error('No active tab found');
-          return handleSnap({ url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl });
+        .query({ active: true, lastFocusedWindow: true })
+        .then(async ([tab]) => {
+          if (tab?.url && tab?.title) {
+            return handleSnap({ url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl });
+          }
+          // Fallback: when a floating popup window is focused it has no tabs,
+          // so check the stored tab info that was captured on icon click.
+          const stored = await chrome.storage.local.get('_lastClickedTab');
+          const storedTab = stored._lastClickedTab as
+            | { url: string; title: string; favIconUrl?: string }
+            | undefined;
+          if (storedTab?.url && storedTab?.title) {
+            return handleSnap(storedTab);
+          }
+          throw new Error('No active tab found');
         })
         .then((result) => sendResponse({ success: true, data: result }))
         .catch((err: Error) => sendResponse({ success: false, error: err.message }));
