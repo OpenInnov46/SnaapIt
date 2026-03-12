@@ -1,8 +1,12 @@
-const BASE_URL = 'http://localhost:3000';
+import { storageGet, storageRemove } from './storage';
+
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+type StoredSession = { access_token?: string } | undefined;
 
 async function getToken(): Promise<string | null> {
-  const result = await chrome.storage.local.get('authToken');
-  return result.authToken?.access_token || null;
+  const result = await storageGet('authToken');
+  return (result.authToken as StoredSession)?.access_token ?? null;
 }
 
 async function request<T>(
@@ -25,7 +29,7 @@ async function request<T>(
   });
 
   if (response.status === 401) {
-    await chrome.storage.local.remove(['authToken', 'user']);
+    await storageRemove(['authToken', 'user']);
     throw new Error('Session expired');
   }
 

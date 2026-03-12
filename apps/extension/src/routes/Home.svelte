@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from '@mateothegreat/svelte5-router';
+  import { onMount, getContext } from "svelte";
+  import type { Page } from '../lib/types';
+  const { goto } = getContext<{ goto: (page: Page) => void }>('router');
   import Zap from '@lucide/svelte/icons/zap';
   import * as api from '../lib/api';
   import { toast } from '../lib/toast';
+  import { storageRemove } from '../lib/storage';
 
   let theme = $state('light');
   let searchQuery = $state('');
@@ -56,17 +58,17 @@
   async function snapCurrentPage() {
     snapStatus = 'loading';
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.url || !tab?.title) {
-        snapStatus = 'error';
-        return;
-      }
-      const result = await api.snapBookmark({
-        url: tab.url,
-        title: tab.title,
-        favicon_url: tab.favIconUrl,
-      });
-      bookmarks = [result, ...bookmarks];
+      // Delegate to background worker so tab query works reliably in side panel context
+      const response = await new Promise<{ success: boolean; data?: any; error?: string }>(
+        (resolve, reject) => {
+          chrome.runtime.sendMessage({ type: 'SNAP_CURRENT_PAGE' }, (res) => {
+            if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+            else resolve(res);
+          });
+        }
+      );
+      if (!response.success) throw new Error(response.error || 'Failed to snap');
+      bookmarks = [response.data, ...bookmarks];
       totalCount++;
       snapStatus = 'success';
       toast('Bookmark snapped!', 'success');
@@ -79,7 +81,8 @@
   }
 
   function openDashboard() {
-    window.open('https://snaapit.app/dashboard', '_blank');
+    const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3001';
+    window.open(`${dashboardUrl}/dashboard`, '_blank');
   }
 
   async function handleSearch() {
@@ -123,7 +126,7 @@
   }
 
   async function handleSignOut() {
-    await chrome.storage.local.remove(['authToken', 'user']);
+    await storageRemove(['authToken', 'user']);
     goto('');
   }
 
@@ -134,10 +137,18 @@
     if (url.includes('twitter') || url.includes('x.com')) return '🐦';
     return '🔗';
   }
+
+  function getHostname(url: string) {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  }
 </script>
 
 <div
-  class="w-[400px] h-[600px] overflow-hidden"
+  class="w-full h-screen flex flex-col"
   class:bg-[#ffffff]={!isDark}
   class:bg-[#1a1a1a]={isDark}
   class:text-[#1a1a1a]={!isDark}
@@ -145,7 +156,7 @@
 >
   <!-- Header -->
   <div
-    class="px-5 py-4 border-b"
+    class="flex-shrink-0 px-5 py-4 border-b"
     class:border-[#e8e7e2]={!isDark}
     class:border-[#3a3a3a]={isDark}
     style="background: linear-gradient(135deg, #c15f3c 0%, #a94f2f 100%)"
@@ -198,7 +209,7 @@
 
   <!-- Quick Actions -->
   <div
-    class="px-5 py-3 flex gap-2 border-b"
+    class="flex-shrink-0 px-5 py-3 flex gap-2 border-b"
     class:border-[#e8e7e2]={!isDark}
     class:border-[#3a3a3a]={isDark}
   >
@@ -220,6 +231,8 @@
     </button>
     <button
       onclick={openDashboard}
+      aria-label="Open dashboard"
+      title="Open dashboard"
       class="px-4 py-2 rounded-lg text-sm font-medium transition-all"
       class:bg-[#f4f3ee]={!isDark}
       class:bg-[#27272a]={isDark}
@@ -234,7 +247,7 @@
 
   <!-- Tabs -->
   <div
-    class="px-5 py-2 flex gap-1 border-b"
+    class="flex-shrink-0 px-5 py-2 flex gap-1 border-b"
     class:border-[#e8e7e2]={!isDark}
     class:border-[#3a3a3a]={isDark}
   >
@@ -266,7 +279,7 @@
   </div>
 
   <!-- Content -->
-  <div class="overflow-y-auto h-[calc(600px-220px)]">
+  <div class="flex-1 overflow-y-auto">
     {#if isLoading}
       <div class="flex items-center justify-center h-32">
         <div class="text-sm" class:text-[#6b6b6b]={!isDark} class:text-[#b1ada1]={isDark}>
@@ -349,7 +362,7 @@
                       class="text-xs font-medium flex items-center gap-1 hover:opacity-70"
                       style="color: #c15f3c"
                     >
-                      {new URL(bookmark.url).hostname}
+                      {getHostname(bookmark.url)}
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
@@ -408,7 +421,7 @@
 
   <!-- Footer Stats -->
   <div
-    class="absolute bottom-0 left-0 right-0 px-5 py-3 border-t flex items-center justify-between text-xs"
+    class="flex-shrink-0 px-5 py-3 border-t flex items-center justify-between text-xs"
     class:bg-[#ffffff]={!isDark}
     class:bg-[#1a1a1a]={isDark}
     class:border-[#e8e7e2]={!isDark}

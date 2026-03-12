@@ -1,15 +1,18 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { route, goto } from '@mateothegreat/svelte5-router';
+  import { onMount, getContext } from "svelte";
+  import type { Page } from '../lib/types';
+  const { goto } = getContext<{ goto: (page: Page) => void }>('router');
   import Zap from '@lucide/svelte/icons/zap';
+  import { storageSet } from '../lib/storage';
 
-  const API_URL = 'http://localhost:3000'; // Ton API NestJS
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   let theme = $state('light');
   let email = $state('');
   let password = $state('');
   let isLoading = $state(false);
   let error = $state('');
+  const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3001';
 
   const isDark = $derived(theme === 'dark');
 
@@ -26,14 +29,16 @@
   });
 
   async function handleAuthMessage(event: MessageEvent) {
-    // Vérifie l'origine selon ton setup
-    if (!event.origin.startsWith('http://localhost')) return;
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const allowedOrigins = [backendUrl, 'https://snaapit.app', 'https://snaapit.com'];
+    const isAllowed = allowedOrigins.some(o => event.origin.startsWith(o)) || event.origin.startsWith('http://localhost');
+    if (!isAllowed) return;
 
     if (event.data.type === 'SUPABASE_AUTH_SUCCESS') {
       console.log('✓ Auth success!', event.data.user.email);
 
       // Sauvegarde la session dans chrome.storage
-      await chrome.storage.local.set({
+      await storageSet({
         authToken: event.data.session,
         user: event.data.user
       });
@@ -70,7 +75,7 @@
       }
 
       // Save session with unified key
-      await chrome.storage.local.set({
+      await storageSet({
         authToken: data.session,
         user: data.user
       });
@@ -308,7 +313,9 @@
               Password
             </label>
             <a
-            href="/forgot-password"
+            href={`${dashboardUrl}/forgot-password`}
+            target="_blank"
+            rel="noreferrer"
             class="text-sm font-medium hover:opacity-80 transition-opacity"
             style="color: #c15f3c"
             >
@@ -346,14 +353,13 @@
       <!-- Sign up link -->
       <p class="mt-6 text-center text-sm" class:text-[#6b6b6b]={!isDark} class:text-[#b1ada1]={isDark}>
         Don't have an account?
-<a
-        use:route
-        href="/signup"
-        class="font-medium hover:opacity-80 transition-opacity"
+<button
+        onclick={() => goto('signup')}
+        class="font-medium hover:opacity-80 transition-opacity cursor-pointer border-none bg-transparent p-0 inline"
         style="color: #c15f3c"
         >
         Sign up for free
-        </a>
+        </button>
       </p>
     </div>
 

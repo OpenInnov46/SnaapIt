@@ -1,64 +1,44 @@
 <script lang="ts">
-  import { Router, type RouteConfig, RouteResult, goto } from '@mateothegreat/svelte5-router';
+  import { onMount, setContext } from 'svelte';
+  import type { Page } from './lib/types';
   import SignIn from './routes/SignIn.svelte';
   import SignUp from './routes/SignUp.svelte';
   import Home from './routes/Home.svelte';
   import Toast from './lib/components/Toast.svelte';
+  import { storageGet } from './lib/storage';
 
-  const routes: RouteConfig[] = [
-    {
-      path: '',
-      component: SignIn,
-    },
-    {
-      path: 'signup',
-      component: SignUp,
-    },
-    {
-      path: 'home',
-      component: Home,
-    },
-  ];
+  let page = $state<Page>('');
+  let ready = $state(false);
 
-  const isLogin = async (route: RouteResult): Promise<boolean> => {
-    const authToken = await chrome.storage.local.get('authToken');
-    console.log('Auth Token:', authToken);
-    const isAuthenticated = Boolean(authToken.authToken);
+  function goto(route: Page) {
+    page = route;
+  }
 
-    const currentPath = route.route?.path || '';
+  setContext<{ goto: (page: Page) => void }>('router', { goto });
 
-    // Si on est sur la page de connexion
-    if (currentPath === '') {
-      if (isAuthenticated) {
-        goto('home'); // Rediriger vers home si connecté
-        return false; // Bloquer la navigation vers sign-in
+  onMount(async () => {
+    try {
+      const result = await storageGet('authToken');
+      if (result.authToken) {
+        page = 'home';
       }
-      return true; // Permettre d'afficher sign-in si non connecté
+    } catch (e) {
+      console.error('Auth check error:', e);
     }
-
-    // Si on est sur la page d'inscription
-    if (currentPath === 'signup') {
-      if (isAuthenticated) {
-        goto('home'); // Rediriger vers home si connecté
-        return false; // Bloquer la navigation vers signup
-      }
-      return true; // Permettre signup si non connecté
-    }
-
-    // Si on est sur la page home
-    if (currentPath === 'home') {
-      if (!isAuthenticated) {
-        goto(''); // Rediriger vers sign-in si non connecté
-        return false; // Bloquer la navigation vers home
-      }
-      return true; // Permettre home si connecté
-    }
-
-    return true; // Par défaut, permettre la navigation
-  };
+    ready = true;
+  });
 </script>
 
 <Toast />
-<Router hooks={{
-  pre: [isLogin]
-}} {routes} />
+
+{#if !ready}
+  <div class="flex min-h-screen w-[400px] items-center justify-center bg-[#fafafa]">
+    <div class="text-sm text-[#6b6b6b]">Loading...</div>
+  </div>
+{:else if page === ''}
+  <SignIn />
+{:else if page === 'signup'}
+  <SignUp />
+{:else}
+  <Home />
+{/if}

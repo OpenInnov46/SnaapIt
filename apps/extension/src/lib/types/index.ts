@@ -3,3 +3,6 @@ export interface MenuItem {
   label: string;
   action?: () => void;
 }
+
+// Router page type
+export type Page = '' | 'signup' | 'home';

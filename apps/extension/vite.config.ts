@@ -14,6 +14,7 @@ function copyManifest() {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [svelte(), copyManifest()],
   build: {
     outDir: 'dist',

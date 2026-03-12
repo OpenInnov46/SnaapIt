@@ -3,6 +3,37 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { OpenAiService } from '../openai/openai.service';
 import { CreateBookmarkDto } from './dto/create-bookmark.dto';
 
+/** Cosine similarity between two equal-length vectors (JS fallback for pgvector). */
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+function normalizeEmbedding(raw: unknown): number[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((v): v is number => typeof v === 'number');
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v): v is number => typeof v === 'number');
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 @Injectable()
 export class BookmarksService {
   constructor(
@@ -17,34 +48,50 @@ export class BookmarksService {
     const textForEmbedding = [dto.title, dto.description, dto.url]
       .filter(Boolean)
       .join(' ');
-    const embedding = await this.openAiService.generateEmbedding(textForEmbedding);
 
-    // Get existing folders for smart classification
-    const { data: existingFolders } = await supabase
-      .from('folders')
-      .select('id, name')
-      .eq('user_id', userId);
+    let embedding: number[] = [];
+    let tags: string[] = [];
+    let suggestedFolder = 'Uncategorized';
 
-    const folderNames = (existingFolders || []).map((f) => f.name);
+    try {
+      embedding = await this.openAiService.generateEmbedding(textForEmbedding);
 
-    // Generate tags and folder suggestion
-    const { tags, suggestedFolder } =
-      await this.openAiService.generateTagsAndFolder(
+      // Get existing folders for smart classification
+      const { data: existingFolders } = await supabase
+        .from('folders')
+        .select('id, name')
+        .eq('user_id', userId);
+
+      const folderNames = (existingFolders || []).map((f) => f.name);
+
+      // Generate tags and folder suggestion
+      const aiResult = await this.openAiService.generateTagsAndFolder(
         dto.title,
         dto.description || '',
         dto.url,
         folderNames,
       );
+      tags = aiResult.tags;
+      suggestedFolder = aiResult.suggestedFolder;
+    } catch (aiError) {
+      console.warn('[create] AI enrichment failed, saving bookmark without tags/embedding:', aiError.message);
+    }
+
+    // Get or create the suggested folder (re-fetch outside AI try-catch to always have fresh data)
+    const { data: foldersForPlacement } = await supabase
+      .from('folders')
+      .select('id, name')
+      .eq('user_id', userId);
 
     // Find or create the suggested folder
     let folderId: string | null = null;
-    const existingFolder = (existingFolders || []).find(
+    const existingFolder = (foldersForPlacement || []).find(
       (f) => f.name.toLowerCase() === suggestedFolder.toLowerCase(),
     );
 
     if (existingFolder) {
       folderId = existingFolder.id;
-    } else {
+    } else if (suggestedFolder !== 'Uncategorized') {
       const { data: newFolder } = await supabase
         .from('folders')
         .insert({ user_id: userId, name: suggestedFolder })
@@ -64,7 +111,7 @@ export class BookmarksService {
         favicon_url: dto.favicon_url || null,
         folder_id: folderId,
         tags,
-        embedding: JSON.stringify(embedding),
+        embedding: embedding.length > 0 ? JSON.stringify(embedding) : null,
       })
       .select('id, url, title, description, favicon_url, folder_id, tags, created_at')
       .single();
@@ -102,15 +149,49 @@ export class BookmarksService {
 
     const queryEmbedding = await this.openAiService.generateEmbedding(query);
 
-    const { data, error } = await supabase.rpc('match_bookmarks', {
-      query_embedding: JSON.stringify(queryEmbedding),
-      match_threshold: threshold,
-      match_count: limit,
-      p_user_id: userId,
-    });
+    // Try pgvector RPC first (fast, requires pgvector extension in Supabase)
+    try {
+      const { data, error } = await supabase.rpc('match_bookmarks', {
+        query_embedding: JSON.stringify(queryEmbedding),
+        match_threshold: threshold,
+        match_count: limit,
+        p_user_id: userId,
+      });
 
-    if (error) throw error;
-    return data;
+      if (!error) return data ?? [];
+      // If the RPC doesn't exist or pgvector isn't enabled, fall through to JS fallback
+      console.warn('[search] pgvector RPC failed, falling back to JS cosine similarity:', error.message);
+    } catch (rpcError) {
+      console.warn('[search] pgvector unavailable, using JS fallback:', rpcError.message);
+    }
+
+    // JS fallback: fetch all bookmarks with their stored embeddings and rank in-process
+    const { data: allBookmarks, error: fetchError } = await supabase
+      .from('bookmarks')
+      .select('id, url, title, description, favicon_url, folder_id, tags, created_at, embedding')
+      .eq('user_id', userId);
+
+    if (fetchError) throw fetchError;
+
+    const results = (allBookmarks ?? [])
+      .map((b) => {
+        const embedding = normalizeEmbedding(b.embedding);
+        return {
+          ...b,
+          embedding,
+        };
+      })
+      .filter((b) => b.embedding.length > 0)
+      .map((b) => ({
+        ...b,
+        similarity: cosineSimilarity(queryEmbedding, b.embedding),
+        embedding: undefined, // don't expose raw embedding to client
+      }))
+      .filter((b) => b.similarity >= threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    return results;
   }
 
   async update(

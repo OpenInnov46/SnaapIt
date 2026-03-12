@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { goto } from '@mateothegreat/svelte5-router';
+  import { onMount, getContext } from "svelte";
+  import type { Page } from '../lib/types';
+  const { goto } = getContext<{ goto: (page: Page) => void }>('router');
   import Zap from '@lucide/svelte/icons/zap';
+  import { storageSet } from '../lib/storage';
 
-  const API_URL = 'http://localhost:3000';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
   let theme = $state('light');
   let name = $state('');
@@ -26,9 +28,12 @@
   });
 
   async function handleAuthMessage(event: MessageEvent) {
-    if (!event.origin.startsWith('http://localhost')) return;
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const allowedOrigins = [backendUrl, 'https://snaapit.app', 'https://snaapit.com'];
+    const isAllowed = allowedOrigins.some(o => event.origin.startsWith(o)) || event.origin.startsWith('http://localhost');
+    if (!isAllowed) return;
     if (event.data.type === 'SUPABASE_AUTH_SUCCESS') {
-      await chrome.storage.local.set({
+      await storageSet({
         authToken: event.data.session,
         user: event.data.user
       });
@@ -76,7 +81,16 @@
         throw new Error(data.message || 'Failed to create account');
       }
 
-      success = 'Account created! Check your email to confirm, then sign in.';
+      // Backend now returns a session for all users — log them in directly
+      if (data.session) {
+        await storageSet({
+          authToken: data.session,
+          user: data.user
+        });
+        goto('home');
+      } else {
+        success = 'Account created! Please sign in.';
+      }
     } catch (err: any) {
       error = err.message || 'Failed to create account';
     } finally {
@@ -406,13 +420,13 @@
       <!-- Sign in link -->
       <p class="mt-6 text-center text-sm" class:text-[#6b6b6b]={!isDark} class:text-[#b1ada1]={isDark}>
         Already have an account?
-        <a
-          href="/"
-          class="font-medium hover:opacity-80 transition-opacity"
+        <button
+          onclick={() => goto('')}
+          class="font-medium hover:opacity-80 transition-opacity cursor-pointer border-none bg-transparent p-0 inline"
           style="color: #c15f3c"
         >
           Sign in
-        </a>
+        </button>
       </p>
     </div>
 
