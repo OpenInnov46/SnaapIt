@@ -146,52 +146,95 @@ export class BookmarksService {
     limit = 10,
   ) {
     const supabase = this.supabaseService.getClientWithAuth(token);
+    const queryLower = query.toLowerCase().trim();
 
-    const queryEmbedding = await this.openAiService.generateEmbedding(query);
+    // 1. Text search — fast ILIKE on title, description, url
+    const { data: textMatches } = await supabase
+      .from('bookmarks')
+      .select('id, url, title, description, favicon_url, folder_id, tags, created_at')
+      .eq('user_id', userId)
+      .or(`title.ilike.%${queryLower}%,description.ilike.%${queryLower}%,url.ilike.%${queryLower}%`);
 
-    // Try pgvector RPC first (fast, requires pgvector extension in Supabase)
+    // Build a map of text matches with computed text similarity
+    const textMatchMap = new Map<string, number>();
+    for (const b of textMatches ?? []) {
+      const titleLower = (b.title || '').toLowerCase();
+      const urlLower = (b.url || '').toLowerCase();
+      const descLower = (b.description || '').toLowerCase();
+
+      let textScore: number;
+      if (titleLower === queryLower || urlLower === queryLower) {
+        textScore = 1.0; // exact match
+      } else if (titleLower.includes(queryLower) || urlLower.includes(queryLower)) {
+        // Partial match — score based on how much of the field the query covers
+        const bestField = titleLower.includes(queryLower) ? titleLower : urlLower;
+        textScore = 0.8 + 0.2 * (queryLower.length / bestField.length);
+      } else if (descLower.includes(queryLower)) {
+        textScore = 0.7;
+      } else {
+        textScore = 0.6;
+      }
+      textMatchMap.set(b.id, textScore);
+    }
+
+    // 2. Semantic search via embeddings
+    let semanticResults: Array<{ id: string; similarity: number; [k: string]: any }> = [];
     try {
+      const queryEmbedding = await this.openAiService.generateEmbedding(query);
+
       const { data, error } = await supabase.rpc('match_bookmarks', {
         query_embedding: JSON.stringify(queryEmbedding),
         match_threshold: threshold,
-        match_count: limit,
+        match_count: limit * 2,
         p_user_id: userId,
       });
 
-      if (!error) return data ?? [];
-      // If the RPC doesn't exist or pgvector isn't enabled, fall through to JS fallback
-      console.warn('[search] pgvector RPC failed, falling back to JS cosine similarity:', error.message);
-    } catch (rpcError) {
-      console.warn('[search] pgvector unavailable, using JS fallback:', rpcError.message);
+      if (!error) {
+        semanticResults = data ?? [];
+      } else {
+        console.warn('[search] pgvector RPC failed, using JS fallback:', error.message);
+        // JS fallback
+        const { data: allBookmarks } = await supabase
+          .from('bookmarks')
+          .select('id, url, title, description, favicon_url, folder_id, tags, created_at, embedding')
+          .eq('user_id', userId);
+
+        semanticResults = (allBookmarks ?? [])
+          .map((b) => ({ ...b, embedding: normalizeEmbedding(b.embedding) }))
+          .filter((b) => b.embedding.length > 0)
+          .map((b) => ({
+            ...b,
+            similarity: cosineSimilarity(queryEmbedding, b.embedding),
+            embedding: undefined,
+          }))
+          .filter((b) => b.similarity >= threshold);
+      }
+    } catch (embeddingError) {
+      console.warn('[search] Embedding generation failed, using text-only results:', embeddingError.message);
     }
 
-    // JS fallback: fetch all bookmarks with their stored embeddings and rank in-process
-    const { data: allBookmarks, error: fetchError } = await supabase
-      .from('bookmarks')
-      .select('id, url, title, description, favicon_url, folder_id, tags, created_at, embedding')
-      .eq('user_id', userId);
+    // 3. Merge results — text score takes priority, semantic fills in
+    const mergedMap = new Map<string, any>();
 
-    if (fetchError) throw new Error(fetchError.message || 'Failed to fetch bookmarks for search');
+    // Add text matches first
+    for (const b of textMatches ?? []) {
+      mergedMap.set(b.id, { ...b, similarity: textMatchMap.get(b.id) || 0.6 });
+    }
 
-    const results = (allBookmarks ?? [])
-      .map((b) => {
-        const embedding = normalizeEmbedding(b.embedding);
-        return {
-          ...b,
-          embedding,
-        };
-      })
-      .filter((b) => b.embedding.length > 0)
-      .map((b) => ({
-        ...b,
-        similarity: cosineSimilarity(queryEmbedding, b.embedding),
-        embedding: undefined, // don't expose raw embedding to client
-      }))
-      .filter((b) => b.similarity >= threshold)
+    // Merge semantic results — use best score between text and semantic
+    for (const b of semanticResults) {
+      const existing = mergedMap.get(b.id);
+      if (existing) {
+        existing.similarity = Math.max(existing.similarity, b.similarity);
+      } else {
+        const { embedding, ...rest } = b;
+        mergedMap.set(b.id, rest);
+      }
+    }
+
+    return Array.from(mergedMap.values())
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);
-
-    return results;
   }
 
   async update(
