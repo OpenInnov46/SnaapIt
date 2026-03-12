@@ -1,0 +1,129 @@
+/* Palette de couleurs Claude */
+:root {
+    /* Couleurs de base Claude */
+    --claude-orange: #c15f3c;
+    --claude-beige: #b1ada1;
+    --claude-cream: #f4f3ee;
+    --claude-white: #ffffff;
+
+    /* Variantes de l'orange Claude */
+    --claude-orange-light: #d4735a;
+    --claude-orange-dark: #a94f2f;
+    --claude-orange-pale: #e8bfaf;
+
+    /* Variantes du beige */
+    --claude-beige-light: #c9c5bb;
+    --claude-beige-dark: #928f85;
+
+    /* Système de design avec les couleurs Claude */
+    --background: #ffffff;
+    --foreground: #1a1a1a;
+
+    --primary: #c15f3c;
+    --primary-foreground: #ffffff;
+    --primary-hover: #a94f2f;
+
+    --secondary: #f4f3ee;
+    --secondary-foreground: #1a1a1a;
+    --secondary-hover: #e8e7e2;
+
+    --accent: #b1ada1;
+    --accent-foreground: #1a1a1a;
+    --accent-hover: #928f85;
+
+    --muted: #f4f3ee;
+    --muted-foreground: #6b6b6b;
+
+    --border: #e8e7e2;
+    --input: #f4f3ee;
+    --ring: #c15f3c;
+
+    --card: #ffffff;
+    --card-foreground: #1a1a1a;
+
+    --destructive: #dc2626;
+    --destructive-foreground: #ffffff;
+
+    --radius: 0.5rem;
+}
+
+/* Mode sombre avec les couleurs Claude */
+.dark {
+    --background: #1a1a1a;
+    --foreground: #f4f3ee;
+
+    --primary: #d4735a;
+    --primary-foreground: #ffffff;
+    --primary-hover: #c15f3c;
+
+    --secondary: #2a2a2a;
+    --secondary-foreground: #f4f3ee;
+    --secondary-hover: #3a3a3a;
+
+    --accent: #928f85;
+    --accent-foreground: #f4f3ee;
+    --accent-hover: #b1ada1;
+
+    --muted: #2a2a2a;
+    --muted-foreground: #b1ada1;
+
+    --border: #3a3a3a;
+    --input: #2a2a2a;
+    --ring: #d4735a;
+
+    --card: #242424;
+    --card-foreground: #f4f3ee;
+
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+}
+
+/* Classes utilitaires */
+.bg-claude-orange { background-color: var(--claude-orange); }
+.bg-claude-beige { background-color: var(--claude-beige); }
+.bg-claude-cream { background-color: var(--claude-cream); }
+
+.text-claude-orange { color: var(--claude-orange); }
+.text-claude-beige { color: var(--claude-beige); }
+.text-claude-cream { color: var(--claude-cream); }
+
+.border-claude-orange { border-color: var(--claude-orange); }
+.border-claude-beige { border-color: var(--claude-beige); }
+.border-claude-cream { border-color: var(--claude-cream); }
+
+/* Exemple d'utilisation */
+.btn-primary {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn-secondary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-secondary:hover {
+    background-color: var(--secondary-hover);
+}
+
+.card {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+}

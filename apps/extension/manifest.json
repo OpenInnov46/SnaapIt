@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Snaapit - AI Bookmark Search",
+  "short_name": "Snaapit",
+  "version": "0.1.0",
+  "description": "Find any bookmark by describing what it does. AI-powered semantic search for your bookmarks.",
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "tabs"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
