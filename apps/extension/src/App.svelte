@@ -32,7 +32,7 @@
 <Toast />
 
 {#if !ready}
-  <div class="flex min-h-screen w-[400px] items-center justify-center bg-[#fafafa]">
+  <div class="flex min-h-screen items-center justify-center bg-[#fafafa]">
     <div class="text-sm text-[#6b6b6b]">Loading...</div>
   </div>
 {:else if page === ''}

@@ -227,7 +227,7 @@
 </script>
 
 <div
-  class="min-h-screen flex items-center justify-center p-4 w-[350px]"
+  class="min-h-screen flex items-center justify-center p-4 w-full"
   class:bg-[#fafafa]={!isDark}
   class:bg-[#0f0f0f]={isDark}
 >
