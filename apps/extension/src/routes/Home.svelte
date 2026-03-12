@@ -36,15 +36,28 @@
   async function loadData() {
     isLoading = true;
     try {
-      const [bookmarkResult, folderResult] = await Promise.all([
+      const [bookmarkResult, folderResult] = await Promise.allSettled([
         api.getBookmarks(),
         api.getFolders(),
       ]);
-      bookmarks = bookmarkResult.bookmarks;
-      totalCount = bookmarkResult.total;
-      folders = folderResult;
+
+      if (bookmarkResult.status === 'fulfilled') {
+        bookmarks = bookmarkResult.value.bookmarks;
+        totalCount = bookmarkResult.value.total;
+      } else {
+        throw bookmarkResult.reason;
+      }
+
+      if (folderResult.status === 'fulfilled') {
+        folders = folderResult.value;
+      }
     } catch (err: any) {
-      toast(err.message === 'Not authenticated' ? 'Please sign in again' : 'Failed to load bookmarks', 'error');
+      if (err.message === 'Not authenticated' || err.message === 'Session expired') {
+        await storageRemove(['authToken', 'user']);
+        goto('');
+        return;
+      }
+      toast('Failed to load bookmarks', 'error');
     } finally {
       isLoading = false;
     }
@@ -68,12 +81,21 @@
         }
       );
       if (!response.success) throw new Error(response.error || 'Failed to snap');
-      bookmarks = [response.data, ...bookmarks];
-      totalCount++;
+      if (response.data?.id) {
+        bookmarks = [response.data, ...bookmarks];
+        totalCount++;
+      } else {
+        await loadData();
+      }
       snapStatus = 'success';
       toast('Bookmark snapped!', 'success');
       setTimeout(() => (snapStatus = 'idle'), 2000);
     } catch (err: any) {
+      if (err.message === 'Not authenticated' || err.message === 'Session expired') {
+        await storageRemove(['authToken', 'user']);
+        goto('');
+        return;
+      }
       snapStatus = 'error';
       toast(err.message || 'Failed to snap page', 'error');
       setTimeout(() => (snapStatus = 'idle'), 2000);
@@ -96,6 +118,11 @@
     try {
       searchResults = await api.searchBookmarks(searchQuery);
     } catch (err: any) {
+      if (err.message === 'Not authenticated' || err.message === 'Session expired') {
+        await storageRemove(['authToken', 'user']);
+        goto('');
+        return;
+      }
       toast('Search failed', 'error');
     } finally {
       isLoading = false;

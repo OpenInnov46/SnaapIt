@@ -27,9 +27,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? res
           : (res as any).message || exception.message;
     } else if (exception instanceof Error) {
-      // Supabase / OpenAI errors
+      // Supabase / OpenAI / standard errors
       message = exception.message;
       this.logger.error(`Unhandled error: ${message}`, exception.stack);
+    } else if (exception && typeof exception === 'object' && 'message' in exception) {
+      // Supabase PostgrestError and similar non-Error objects
+      message = String((exception as any).message);
+      this.logger.error(`Unhandled non-Error exception: ${message}`);
     }
 
     response.status(status).json({

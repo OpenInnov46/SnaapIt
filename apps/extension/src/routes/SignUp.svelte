@@ -16,6 +16,7 @@
   let isLoading = $state(false);
   let error = $state('');
   let success = $state('');
+  const dashboardUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3001';
 
   const isDark = $derived(theme === 'dark');
 
@@ -44,6 +45,94 @@
   function toggleTheme() {
     theme = theme === 'light' ? 'dark' : 'light';
     localStorage.setItem('theme', theme);
+  }
+
+  type OAuthPopupHandle = {
+    close: () => void;
+    isClosed: () => Promise<boolean>;
+  };
+
+  async function openOAuthPopup(url: string, title: string): Promise<OAuthPopupHandle> {
+    const width = 520;
+    const height = 700;
+
+    if (typeof chrome !== 'undefined' && chrome.windows?.create) {
+      const created = await chrome.windows.create({
+        url,
+        type: 'popup',
+        width,
+        height,
+        focused: true,
+        setSelfAsOpener: true,
+      });
+
+      if (!created?.id) {
+        throw new Error('Failed to open OAuth popup.');
+      }
+
+      const id = created.id;
+      return {
+        close: () => {
+          chrome.windows.remove(id).catch(() => undefined);
+        },
+        isClosed: async () => {
+          try {
+            await chrome.windows.get(id);
+            return false;
+          } catch {
+            return true;
+          }
+        },
+      };
+    }
+
+    const minLeft = (window.screen as any).availLeft ?? 0;
+    const minTop = (window.screen as any).availTop ?? 0;
+    const maxLeft = minLeft + window.screen.availWidth - width;
+    const maxTop = minTop + window.screen.availHeight - height;
+    const desiredLeft = Math.floor(window.screenX + (window.outerWidth - width) / 2);
+    const desiredTop = Math.floor(window.screenY + (window.outerHeight - height) / 2);
+    const left = Math.min(maxLeft, Math.max(minLeft, desiredLeft));
+    const top = Math.min(maxTop, Math.max(minTop, desiredTop));
+
+    const popup = window.open(
+      url,
+      title,
+      `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      throw new Error('Popup blocked. Please allow popups.');
+    }
+
+    popup.focus();
+    return {
+      close: () => popup.close(),
+      isClosed: async () => popup.closed,
+    };
+  }
+
+  function monitorOAuthPopup(popup: OAuthPopupHandle, timeoutMessage: string) {
+    const closeCheck = setInterval(() => {
+      popup.isClosed().then((closed) => {
+        if (!closed) return;
+        clearInterval(closeCheck);
+        if (isLoading) {
+          isLoading = false;
+          error = 'Authentication canceled.';
+        }
+      });
+    }, 500);
+
+    setTimeout(() => {
+      clearInterval(closeCheck);
+      popup.isClosed().then((closed) => {
+        if (closed) return;
+        popup.close();
+        error = timeoutMessage;
+        isLoading = false;
+      });
+    }, 300000);
   }
 
   async function handleEmailSignup(e: Event) {
@@ -106,16 +195,9 @@
       const data = await response.json();
       if (!response.ok) throw new Error('Failed to get OAuth URL');
 
-      const popup = window.open(data.url, 'Google Sign Up', 'width=500,height=600,left=200,top=100');
-      if (!popup) throw new Error('Popup blocked. Please allow popups.');
+      const popup = await openOAuthPopup(data.url, 'Google Sign Up');
 
-      setTimeout(() => {
-        if (popup && !popup.closed) {
-          popup.close();
-          error = 'Sign up timeout. Please try again.';
-          isLoading = false;
-        }
-      }, 300000);
+      monitorOAuthPopup(popup, 'Sign up timeout. Please try again.');
     } catch (err: any) {
       error = err.message || 'Failed to sign up with Google';
       isLoading = false;
@@ -130,16 +212,9 @@
       const data = await response.json();
       if (!response.ok) throw new Error('Failed to get OAuth URL');
 
-      const popup = window.open(data.url, 'GitHub Sign Up', 'width=500,height=600,left=200,top=100');
-      if (!popup) throw new Error('Popup blocked. Please allow popups.');
+      const popup = await openOAuthPopup(data.url, 'GitHub Sign Up');
 
-      setTimeout(() => {
-        if (popup && !popup.closed) {
-          popup.close();
-          error = 'Sign up timeout. Please try again.';
-          isLoading = false;
-        }
-      }, 300000);
+      monitorOAuthPopup(popup, 'Sign up timeout. Please try again.');
     } catch (err: any) {
       error = err.message || 'Failed to sign up with GitHub';
       isLoading = false;
@@ -390,7 +465,9 @@
           >
             I agree to the
             <a
-              href="/terms"
+              href={`${dashboardUrl}/terms`}
+              target="_blank"
+              rel="noreferrer"
               class="font-medium hover:opacity-80 transition-opacity"
               style="color: #c15f3c"
             >
@@ -398,7 +475,9 @@
             </a>
             and
             <a
-              href="/privacy"
+              href={`${dashboardUrl}/privacy`}
+              target="_blank"
+              rel="noreferrer"
               class="font-medium hover:opacity-80 transition-opacity"
               style="color: #c15f3c"
             >

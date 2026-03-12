@@ -1,31 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Use explicit onClicked handler so it works across all Chromium forks.
-// If chrome.sidePanel is available, try to open the panel; otherwise fall back
-// to a floating popup window (Firefox, older Chromium builds, Arc, etc.).
-chrome.action.onClicked.addListener((tab) => {
-  if (chrome.sidePanel) {
-    chrome.sidePanel
-      .open({ tabId: tab.id! })
-      .catch(() => {
-        // sidePanel.open() not supported in this build — fall back to popup
-        chrome.windows.create({
-          url: chrome.runtime.getURL('index.html'),
-          type: 'popup',
-          width: 420,
-          height: 700,
-        });
-      });
-  } else {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('index.html'),
-      type: 'popup',
-      width: 420,
-      height: 700,
-    });
-  }
-});
-
 chrome.runtime.onMessage.addListener(
   (
     message: { type: string; data?: { url: string; title: string; favIconUrl?: string } },
@@ -75,7 +49,8 @@ async function handleSnap(data: {
     body: JSON.stringify({
       url: data.url,
       title: data.title,
-      favicon_url: data.favIconUrl,
+      // Data URIs are not useful as remote URLs, skip them
+      favicon_url: data.favIconUrl?.startsWith('data:') ? undefined : data.favIconUrl,
     }),
   });
 

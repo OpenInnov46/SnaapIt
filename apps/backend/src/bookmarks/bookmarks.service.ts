@@ -116,7 +116,7 @@ export class BookmarksService {
       .select('id, url, title, description, favicon_url, folder_id, tags, created_at')
       .single();
 
-    if (error) throw error;
+    if (error) throw new Error(error.message || 'Failed to save bookmark');
     return data;
   }
 
@@ -134,7 +134,7 @@ export class BookmarksService {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (error) throw error;
+    if (error) throw new Error(error.message || 'Failed to fetch bookmarks');
     return { bookmarks: data, total: count };
   }
 
@@ -171,7 +171,7 @@ export class BookmarksService {
       .select('id, url, title, description, favicon_url, folder_id, tags, created_at, embedding')
       .eq('user_id', userId);
 
-    if (fetchError) throw fetchError;
+    if (fetchError) throw new Error(fetchError.message || 'Failed to fetch bookmarks for search');
 
     const results = (allBookmarks ?? [])
       .map((b) => {
@@ -210,7 +210,7 @@ export class BookmarksService {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw new Error(error.message || 'Failed to update bookmark');
     return data;
   }
 
@@ -223,7 +223,7 @@ export class BookmarksService {
       .eq('id', id)
       .eq('user_id', userId);
 
-    if (error) throw error;
+    if (error) throw new Error(error.message || 'Failed to delete bookmark');
     return { deleted: true };
   }
 }
