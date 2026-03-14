@@ -5,13 +5,6 @@
 
 Ce dépôt utilise [Turborepo](https://turborepo.dev/) pour gérer l'architecture monorepo du projet, séparant proprement l'application web, l'extension et les services backend.
 
-## 👥 L'équipe (Groupe 46)
-- Maxim COSTA
-- Oussama DAHMANI
-- Flavio MORENO
-- Kilyan COTTEN
-- Ousama MANAI
-
 ---
 
 ## 🏗️ Architecture du Monorepo (Ce qu'il y a à l'intérieur)
